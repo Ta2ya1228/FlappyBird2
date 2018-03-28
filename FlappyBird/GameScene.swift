@@ -9,7 +9,6 @@
 //クラス(SKScene, SKPhysicsContactDelegate)を輸入
 import SpriteKit
 
-
 //SKSceneのゲームシーンのためのクラス(ノードなどが入る)
 //クラス(SKPhysics)継承を増やすと使えるメソッド(物理演算)増える
 class GameScene: SKScene, SKPhysicsContactDelegate {
@@ -20,6 +19,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     var bird:SKSpriteNode!
     var scoreLabelNode:SKLabelNode!
     var bestScoreLabelNode:SKLabelNode!
+    var kabeScoreLabelNode:SKLabelNode!
     var gameOverLabelNode:SKLabelNode!
     var scoreNode:SKNode!
 
@@ -30,9 +30,11 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     let groundCategory: UInt32 = 1 << 1     //0...00010         x << y は 「xという数字をy桁目に入れる」という意味
     let wallCategory: UInt32 = 1 << 2       //0...0010
     let scoreCategory: UInt32 = 1 << 3      //0...0100
+    let kabeScoreCategory: UInt32 = 1 << 4      //0...1000
     
     //スコア用
     var score = 0
+    var kabeScore = 0
     let userDefaults:UserDefaults = UserDefaults.standard
     
     
@@ -70,11 +72,12 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         addChild(scrollNode)
         
         
-        wallNode = SKNode()       //生成する！
+        wallNode = SKNode()       //生成する
         scrollNode.addChild(wallNode)  //生んでスライドするだけ
         
         scoreNode = SKNode()
         scrollNode.addChild(scoreNode)
+
         //各種スプライトノード(処理軽いのに高速で画像を描画する)を生成する処理をメソッドに分割
         setupGround()
         setupCloud()
@@ -221,7 +224,10 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             
             //スプライトに物理演算を設定する(もともとNodeのプロパティにある)
             under.physicsBody = SKPhysicsBody(rectangleOf: wallTexture.size())
-            under.physicsBody?.categoryBitMask = self.wallCategory         //underにcategoryBitMaskプロパティで自身のカテゴリーを設定
+            under.physicsBody?.categoryBitMask = self.wallCategory
+
+            
+            //underにcategoryBitMaskプロパティで自身のカテゴリーを設定
             
             //衝突の時に動かないように設定する
             under.physicsBody?.isDynamic = false
@@ -230,33 +236,35 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             // 上側の壁を作成
             let upper = SKSpriteNode(texture: wallTexture)
             upper.position = CGPoint(x: 0.0, y: under_wall_y + wallTexture.size().height + slit_length)
-            
-            wall.addChild(upper)
-            wall.run(wallAnimation)
-            
-            self.wallNode.addChild(wall)
-            
-            // スプライトに物理演算を設定する
             upper.physicsBody = SKPhysicsBody(rectangleOf: wallTexture.size())
-            upper.physicsBody?.categoryBitMask = self.wallCategory        //upperにcategoryBitMaskプロパティで自身のカテゴリーを設定
+            upper.physicsBody?.categoryBitMask = self.wallCategory
+            wall.addChild(upper)
             
             // 衝突の時に動かないように設定する
             upper.physicsBody?.isDynamic = false
             
-            
- 
+            let kabeScoreNode = SKNode()
+            kabeScoreNode.position = CGPoint(x: upper.size.width + self.bird.size.width / 2, y: self.frame.height / 2.0)
+            kabeScoreNode.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: upper.size.width, height: self.frame.size.height))
+            kabeScoreNode.physicsBody?.isDynamic = false
+            kabeScoreNode.physicsBody?.categoryBitMask = self.kabeScoreCategory
+            // 衝突する相手のカテゴリ設定
+            kabeScoreNode.physicsBody?.contactTestBitMask = self.birdCategory
+
+            wall.addChild(kabeScoreNode)
+            wall.run(wallAnimation)
+            self.wallNode.addChild(wall)
         })
     
 
         
         // 次の壁作成までの待ち時間のアクションを作成
-        let waitAnimation = SKAction.wait(forDuration: 2)
+        let waitAnimation = SKAction.wait(forDuration: 2.5)
         
         // 壁を作成->待ち時間->壁を作成を無限に繰り替えるアクションを作成
         let repeatForeverAnimation = SKAction.repeatForever(SKAction.sequence([createWallAnimation, waitAnimation]))
         
-        wallNode.run(repeatForeverAnimation)
-        
+        self.wallNode.run(repeatForeverAnimation)
     }
     
     
@@ -284,10 +292,10 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         //衝突した時に回転させない
         bird.physicsBody?.allowsRotation = false
         
-        //衝突のカテゴリー設定
+        //衝突のカテゴリー設定(birdはground,wallに動かされ、GとWはbirdに動かされない。contact箱にG,W,Sのcategoryを入れておく。)
         bird.physicsBody?.categoryBitMask = birdCategory  //自分のカテゴリーを設定
-        bird.physicsBody?.collisionBitMask = groundCategory | wallCategory   //(２つのカテゴリーのいずれかと)当たった時に跳ね返る動作を設定
-        bird.physicsBody?.contactTestBitMask = groundCategory | wallCategory | scoreCategory   //衝突相手としてこの３つ
+        bird.physicsBody?.collisionBitMask = groundCategory | wallCategory   //groundとwallによってbirdは動かされる。
+        bird.physicsBody?.contactTestBitMask = groundCategory | wallCategory | scoreCategory //この３つとぶつかった時は衝突しないが、後で処理描きたいからcontactに入れとく
     
         
         // アニメーションを設定
@@ -318,6 +326,15 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let bestScore = userDefaults.integer(forKey: "BEST")
         bestScoreLabelNode.text = "Best Score:\(bestScore)"
         self.addChild(bestScoreLabelNode)
+        
+        kabeScore = 0
+        kabeScoreLabelNode = SKLabelNode()
+        kabeScoreLabelNode.fontColor = UIColor.black
+        kabeScoreLabelNode.position = CGPoint(x: 10, y: self.frame.size.height - 120)
+        kabeScoreLabelNode.zPosition = 100 // 一番手前に表示する
+        kabeScoreLabelNode.horizontalAlignmentMode = SKLabelHorizontalAlignmentMode.left
+        kabeScoreLabelNode.text = "kabeScore:\(kabeScore)"
+        self.addChild(kabeScoreLabelNode)
     }
     
     
@@ -329,9 +346,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let scoreTexture = SKTexture(imageNamed: "meal")
         scoreTexture.filteringMode = .linear
         
-        //あとで使うSpriteを生成
-        let scoreSprite: SKSpriteNode! = SKSpriteNode(texture: scoreTexture)
-
+        
         //壁と同じスピードにしたいから一旦壁画像を読み込む
         let wallTexture = SKTexture(imageNamed: "wall")
         
@@ -346,19 +361,32 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         
         //(完成)２つのアニメーション(さっき定義した)順に実行するアクション(スクロール)を生成
         let scoreScroll = SKAction.sequence([moveScore, removeScore])
-    
+        
         
         
         //スコアを生成するアクション(repeatForeverっていうSKActionでX秒に1回出てきて画面外で勝手に消える)
         let createScoreAnimation = SKAction.run ({
             
+            //あとで使うSpriteを生成
+            let scoreSprite: SKSpriteNode! = SKSpriteNode(texture: scoreTexture)
+
             let scorekari = SKNode()
             
             //画面の右端からスタート(高さはいじらず)
             scorekari.position = CGPoint(x: self.frame.size.width + scoreTexture.size().width / 2, y:0.0)
             
+            
             //xはいじらず(画面の右端で)yをランダムで
-            let random_y = arc4random_uniform(UInt32(Double(self.frame.size.height)))
+            var random_y = arc4random_uniform(UInt32(Double(self.frame.size.height / 3 * 2)))
+            
+            
+            //frame 1/3 〜　2/3
+            while random_y <= UInt32(self.frame.size.height / 3) {
+                
+                random_y = arc4random_uniform(UInt32(Double(self.frame.size.height / 3 * 2)))
+
+            }
+            
             
             scoreSprite.position = CGPoint(x: 0.0, y:Double(random_y))
         
@@ -372,7 +400,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             scoreSprite.physicsBody?.isDynamic = false
             scoreSprite.physicsBody?.categoryBitMask = self.scoreCategory
             scoreSprite.physicsBody?.contactTestBitMask = self.birdCategory
-            
+            scoreSprite.xScale = 0.6
+            scoreSprite.yScale = 0.6
             
             scorekari.addChild(scoreSprite)
             
@@ -383,7 +412,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         
         //次のスコア作成までの待ち時間のアクション
-        let waitAnimation = SKAction.wait(forDuration: 1)
+        let waitAnimation = SKAction.wait(forDuration: 1.5)
         
         //スコア(spriteとscroll)を作成-> 待ち時間 ->スコアを作成を無限に繰り返すアクション
         let repeatForeverAnimation = SKAction.repeatForever(SKAction.sequence([createScoreAnimation, waitAnimation]))
@@ -406,31 +435,98 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         gameOverLabelNode.zPosition = 100 // 一番手前に表示する
         gameOverLabelNode.horizontalAlignmentMode = SKLabelHorizontalAlignmentMode.center
         gameOverLabelNode.text = "GameOver"
+        gameOverLabelNode.fontSize = 80
         self.addChild(gameOverLabelNode)
         
-    }
+        self.backgroundColor = UIColor.black
         
+    }
     
     
+    //アイテムに衝突したら呼ばれる、ラベルを作って、1,5秒後に消去するアクション組んで、ラベルにアクションをセットする(爆弾作ってタイマーっていうアクションつける感じ)
+    func setupScoreItem(){
+        
+        //スコアアイテムラベル
+        let ScoreItemLabel = SKLabelNode()
+        ScoreItemLabel.fontColor = UIColor.red
+        ScoreItemLabel.position = CGPoint(x:self.bird.position.x ,y:self.bird.position.y )
+        ScoreItemLabel.zPosition = 100 // 一番手前に表示する
+        ScoreItemLabel.horizontalAlignmentMode = SKLabelHorizontalAlignmentMode.center
+        ScoreItemLabel.text = "+1"
+        
+        //アクション１
+        let waitAnimation = SKAction.wait(forDuration: 1.5)
+        //アクション２
+        let OutScoreItemAnimation = SKAction.run {
+        self.removeChildren(in: [ScoreItemLabel])
+        }
+        
+        //1と２まとめる
+        let ScoreItemAnimation = SKAction.sequence([waitAnimation, OutScoreItemAnimation])
+        ScoreItemLabel.run(ScoreItemAnimation)
+        
+        //1と２をlabelに
+        ScoreItemLabel.run(ScoreItemAnimation)
+        
+        //完成したlabelを入れる
+        self.addChild(ScoreItemLabel)
+
+        
+
+    }
     
+    func setupEffect(){
+        
+        let effect = SKEmitterNode(fileNamed: "MyParticle.sks")
+        effect?.position = bird.position
+        let waitAction = SKAction.wait(forDuration: 0.7)
+        let stopAction = SKAction.removeFromParent()
+        let effectAction = SKAction.sequence([waitAction, stopAction])
+        effect?.run(effectAction)
+        self.addChild(effect!)
+    }
     
+
     // SKPhysicsContactDelegateのメソッド。衝突したときに呼ばれる
     func didBegin(_ contact: SKPhysicsContact) {
-        // ゲームオーバーのときは何もしない(壁と地面2回あたったら困るから)
+        
+        //categoryBitMask == scoreCategoryってこの場でscoreSpriteだけ
+        //つまりぶつかった(categoryBitMaskが反応した)AがscoreSpriteならAを消す
+
+
+        //すでにぶつかってspeedが0になってる場合は、もう何もしない(壁からの地面で2回ゲームオーバーになることの対策)
         if scrollNode.speed <= 0 {
             return
         }
         
-        // （もしゲームオーバーじゃないかつ、）もしスコア用の物体と衝突したら
-        if (contact.bodyA.categoryBitMask & scoreCategory) == scoreCategory || (contact.bodyB.categoryBitMask & scoreCategory) == scoreCategory {
-            
-            
+        
+        else if (contact.bodyA.categoryBitMask & kabeScoreCategory) == kabeScoreCategory || (contact.bodyB.categoryBitMask & kabeScoreCategory) == kabeScoreCategory{
+            print("kabeScore衝突")
+            kabeScore += 1
+            kabeScoreLabelNode.text = "kabeScore:\(kabeScore)"
+        }
+        
+        // もしスコア用の物体と何かのCategoryが一緒だったらの処理
+        else if contact.bodyA.categoryBitMask == scoreCategory || contact.bodyB.categoryBitMask == scoreCategory
+         {
+            let scoreSound = SKAction.playSoundFileNamed("scoreSound", waitForCompletion: true)
+            self.run(scoreSound)
+            print("お肉ゲット")
             score += 1
             scoreLabelNode.text = "Score:\(score)"  //データ型がどうのこうので更新必要
             
-//            self.scoreSprite.removeAllChildren()
             
+            //if内にif入れる
+            if contact.bodyA.categoryBitMask  == scoreCategory {
+                contact.bodyA.node?.removeFromParent()
+                
+            } else if contact.bodyB.categoryBitMask  == scoreCategory {
+                contact.bodyB.node?.removeFromParent()
+            }
             
+            setupScoreItem()
+            
+            setupEffect()
             
             // ベストスコア更新か確認する
             var bestScore = userDefaults.integer(forKey: "BEST")
@@ -440,11 +536,14 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
                 userDefaults.set(bestScore, forKey: "BEST")
                 userDefaults.synchronize()
             }
+            
+            
             // もしそれ以外(壁か地面)と衝突したら
         } else {
             
             setupGameOverLabel()
-            
+            let gameOverSound = SKAction.playSoundFileNamed("gameoverSound.wav", waitForCompletion: true)
+            self.run(gameOverSound)
             // スクロールを停止させる
             scrollNode.speed = 0
             
@@ -453,6 +552,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             let roll = SKAction.rotate(byAngle: CGFloat(Double.pi) * CGFloat(bird.position.y) * 0.01, duration:1)
             bird.run(roll, completion:{
                 self.bird.speed = 0
+                
             })
         }
     }
@@ -461,8 +561,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     
     func restart() {
         score = 0
+        kabeScore = 0
         scoreLabelNode.text = String("Score:\(score)")
-        
+        kabeScoreLabelNode.text = String("kabeScore:\(kabeScore)")
         bird.position = CGPoint(x: self.frame.size.width * 0.2, y:self.frame.size.height * 0.7)
         bird.physicsBody?.velocity = CGVector.zero
         bird.physicsBody?.collisionBitMask = groundCategory | wallCategory
@@ -476,6 +577,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         
         bird.speed = 1
         scrollNode.speed = 1
+        
+        backgroundColor = UIColor(red: 0.15, green: 0.75, blue:0.90, alpha: 1)
     }
     
     
@@ -485,4 +588,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
 
 
-
+//番号与える
+//お肉の場所をいい感じの場所に
+//結局どういう風に表現するか(画面にお肉１つなら全て消してもいい)
+//
